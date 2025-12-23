@@ -3,82 +3,85 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>縦画面 2/3 ゲーム</title>
-
+<title>縦画面（上半分ゲーム固定）</title>
 <style>
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  background: #000;
-  color: #fff;
-  touch-action: none;
-  user-select: none;
-  overscroll-behavior: none;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
-}
+  html, body{
+    margin:0;
+    padding:0;
+    height:100%;
+    background:#000;
+    color:#fff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+    touch-action:none;
+    user-select:none;
+    overscroll-behavior:none;
+  }
 
-/* ===== 画面を 3 分割 ===== */
-#wrap {
-  height: 100dvh;
-  display: flex;
-  flex-direction: column;
-}
+  /* 画面を必ず縦いっぱいに */
+  #wrap{
+    height:100dvh;
+    display:flex;
+    flex-direction:column;
+  }
 
-/* 上：ゲーム（2/3） */
-#gameArea {
-  flex: 2;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
+  /* 上半分 = ゲーム（固定） */
+  #gameArea{
+    height:50dvh;      /* ★ここが「スマホ画面の半分に固定」 */
+    flex:none;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding-top: env(safe-area-inset-top);
+    box-sizing:border-box;
+  }
 
-/* 下：UI（1/3） */
-#infoArea {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  padding-bottom: env(safe-area-inset-bottom);
-}
+  /* 下半分 = 余白（固定） */
+  #infoArea{
+    height:50dvh;      /* ★下も固定 */
+    flex:none;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    text-align:center;
+    gap:16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom)); /* iPhone下バー対策 */
+    box-sizing:border-box;
+  }
 
-/* Canvas は「高さを親の100%」に合わせる */
-canvas {
-  height: 100%;
-  width: auto;
-  max-width: 100%;
-  aspect-ratio: 9 / 16;   /* 縦ゲーム固定 */
-  background: #111;
-  border: 2px solid #fff;
-  border-radius: 12px;
-}
+  /* Canvasは「上半分の高さにピッタリ収まる」 */
+  canvas{
+    height:100%;
+    width:auto;        /* 縦を優先して、横は自動で縮む */
+    max-width:100%;
+    aspect-ratio: 9 / 16; /* 縦ゲーム比率を固定 */
+    background:#111;
+    border:2px solid rgba(255,255,255,0.85);
+    border-radius:12px;
+    touch-action:none;
+  }
 
-/* ★ 下の文字を 2 倍 */
-#infoArea p {
-  margin: 0;
-  font-size: 2em;
-  text-align: center;
-}
+  /* 下の文字を2倍 */
+  #infoArea p{
+    margin:0;
+    font-size:2em;
+    line-height:1.35;
+  }
 </style>
 </head>
-
 <body>
 
 <div id="wrap">
-
-  <!-- ===== 上 2/3：ゲーム ===== -->
+  <!-- 上：ゲーム（画面の半分固定） -->
   <div id="gameArea">
     <canvas id="game" width="360" height="640"></canvas>
   </div>
 
-  <!-- ===== 下 1/3：余白 UI ===== -->
+  <!-- 下：余白（画面の半分固定） -->
   <div id="infoArea">
     <p id="mainText">画面をタップしてスタート</p>
     <p id="subText">タップでジャンプ（2段ジャンプ）</p>
   </div>
-
 </div>
 
 <script>
@@ -110,7 +113,7 @@ const player = {
 
 let obstacles = [];
 
-function reset() {
+function reset(){
   running = false;
   gameOver = false;
   score = 0;
@@ -124,21 +127,21 @@ function reset() {
   subText.textContent  = "タップでジャンプ（2段ジャンプ）";
 }
 
-function jump() {
-  if (player.jumpCount < 2) {
+function jump(){
+  if (player.jumpCount < 2){
     player.vy = player.jump;
     player.jumpCount++;
   }
 }
 
-function handleTap() {
-  if (!running && !gameOver) {
+function handleTap(){
+  if (!running && !gameOver){
     running = true;
     mainText.textContent = "プレイ中";
     subText.textContent  = "タップでジャンプ";
     return;
   }
-  if (gameOver) {
+  if (gameOver){
     reset();
     running = true;
     mainText.textContent = "プレイ中";
@@ -148,25 +151,36 @@ function handleTap() {
   jump();
 }
 
-canvas.addEventListener("pointerdown", e => {
+/* タップ開始/ジャンプ/リスタート */
+canvas.addEventListener("pointerdown", (e)=>{
   e.preventDefault();
   handleTap();
-}, { passive: false });
+},{passive:false});
 
-document.body.addEventListener("pointerdown", e => {
+/* 余白タップでも開始・リスタートだけ反応（プレイ中ジャンプはcanvasのみ） */
+document.body.addEventListener("pointerdown", (e)=>{
   if (!running || gameOver) handleTap();
-}, { passive: true });
+},{passive:true});
 
-function spawn() {
+/* PC用 */
+document.addEventListener("keydown", (e)=>{
+  if (e.code === "Space" || e.code === "ArrowUp"){
+    if (!running && !gameOver){ running = true; return; }
+    if (gameOver){ reset(); running = true; return; }
+    jump();
+  }
+});
+
+function spawn(){
   obstacles.push({
     x: W + 20,
     w: 28,
-    h: Math.random() * 120 + 40,
+    h: Math.random()*120 + 40,
     speed: 5
   });
 }
 
-function hit(a, b) {
+function hit(a,b){
   return (
     a.x < b.x + b.w &&
     a.x + a.w > b.x &&
@@ -175,7 +189,7 @@ function hit(a, b) {
   );
 }
 
-function update() {
+function update(){
   if (!running || gameOver) return;
 
   frame++;
@@ -184,7 +198,7 @@ function update() {
   player.vy += player.gravity;
   player.y += player.vy;
 
-  if (player.y >= GROUND_Y - player.h) {
+  if (player.y >= GROUND_Y - player.h){
     player.y = GROUND_Y - player.h;
     player.vy = 0;
     player.jumpCount = 0;
@@ -195,8 +209,8 @@ function update() {
   obstacles.forEach(o => o.x -= o.speed);
   obstacles = obstacles.filter(o => o.x + o.w > 0);
 
-  for (const o of obstacles) {
-    if (hit(player, o)) {
+  for (const o of obstacles){
+    if (hit(player, o)){
       gameOver = true;
       running = false;
       mainText.textContent = "GAME OVER";
@@ -206,37 +220,52 @@ function update() {
   }
 }
 
-function draw() {
-  ctx.clearRect(0, 0, W, H);
+function draw(){
+  ctx.clearRect(0,0,W,H);
 
-  ctx.fillStyle = "#87ceeb";
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle="#87ceeb";
+  ctx.fillRect(0,0,W,H);
 
-  ctx.fillStyle = "#4caf50";
-  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillStyle="#4caf50";
+  ctx.fillRect(0,GROUND_Y,W,H-GROUND_Y);
 
-  ctx.fillStyle = "#ff5722";
+  ctx.fillStyle="#ff5722";
   ctx.fillRect(player.x, player.y, player.w, player.h);
 
-  ctx.fillStyle = "#000";
-  obstacles.forEach(o => {
+  ctx.fillStyle="#000";
+  obstacles.forEach(o=>{
     ctx.fillRect(o.x, GROUND_Y - o.h, o.w, o.h);
   });
 
-  ctx.fillStyle = "#fff";
-  ctx.font = "18px Arial";
+  ctx.fillStyle="#fff";
+  ctx.font="18px Arial";
   ctx.fillText("SCORE: " + score, 16, 28);
+
+  if (!running && !gameOver){
+    ctx.fillStyle="rgba(0,0,0,0.35)";
+    ctx.fillRect(20, 240, W-40, 140);
+    ctx.fillStyle="#fff";
+    ctx.font="22px Arial";
+    ctx.fillText("TAP TO START", 98, 305);
+  }
 }
 
-function loop() {
+function loop(){
   update();
   draw();
   requestAnimationFrame(loop);
 }
 
+/* iOS対策：ダブルタップズーム抑制 */
+let lastTouchEnd = 0;
+document.addEventListener('touchend', function (event) {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) event.preventDefault();
+  lastTouchEnd = now;
+}, { passive:false });
+
 reset();
 loop();
 </script>
-
 </body>
 </html>
