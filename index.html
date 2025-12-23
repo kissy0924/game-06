@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>縦画面 2/3 固定（横幅100%）避けゲー</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>固定 320×568 避けゲー（どこタップでもジャンプ）</title>
 <style>
   html, body{
     margin:0;
@@ -17,144 +17,143 @@
     overscroll-behavior:none;
   }
 
-  /* 画面をきっちり分割：上2/3=ゲーム、下1/3=余白 */
+  /* 画面中央に固定サイズのゲームを置く */
   #wrap{
     height:100dvh;
     display:flex;
     flex-direction:column;
-  }
-
-  /* ★ゲーム画面：高さ 2/3、横幅100% */
-  #gameArea{
-    height: calc(100dvh * 2 / 3);
-    width: 100vw;
-    display:flex;
-    justify-content:center;
-    align-items:stretch;
-    padding-top: env(safe-area-inset-top);
-    box-sizing:border-box;
-  }
-
-  /* ★余白：高さ 1/3 */
-  #infoArea{
-    height: calc(100dvh * 1 / 3);
-    width: 100vw;
-    display:flex;
-    flex-direction:column;
-    justify-content:center;
     align-items:center;
-    gap: 14px;
-    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    justify-content:center;
+    gap:14px;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
     box-sizing:border-box;
-    text-align:center;
   }
 
-  /* ★キャンバス：横幅=画面、縦=上2/3にピッタリ */
+  /* ★ゲーム画面を固定（CSSピクセル） */
+  #gameFrame{
+    width:320px;
+    height:568px;
+    border:2px solid rgba(255,255,255,0.85);
+    border-radius:12px;
+    background:#111;
+    overflow:hidden;
+    display:flex;
+    align-items:stretch;
+    justify-content:stretch;
+    box-sizing:border-box;
+  }
+
   canvas{
-    width:100vw;
-    height:100%;
+    width:320px;   /* ★固定 */
+    height:568px;  /* ★固定 */
     display:block;
     background:#111;
-    touch-action:none;
   }
 
-  /* ★余白文字：フォント2倍 */
-  #infoArea p{
-    margin:0;
-    font-size:2em;
+  #info{
+    width:320px;
+    text-align:center;
     line-height:1.35;
+  }
+
+  #mainText{
+    font-size:20px;
+    margin:0 0 6px;
+    opacity:0.95;
+  }
+  #subText{
+    font-size:16px;
+    margin:0;
+    opacity:0.85;
   }
 </style>
 </head>
 <body>
 
 <div id="wrap">
-  <div id="gameArea">
-    <!-- 論理座標（ゲーム計算用） -->
-    <canvas id="game" width="360" height="640"></canvas>
+  <div id="gameFrame">
+    <canvas id="game"></canvas>
   </div>
 
-  <div id="infoArea">
-    <p id="mainText">画面をタップしてスタート</p>
-    <p id="subText">タップでジャンプ（2段ジャンプ）</p>
+  <div id="info">
+    <p id="mainText">画面タップでスタート</p>
+    <p id="subText">どこをタップしてもジャンプ（2段ジャンプ）／GAME OVER後もタップで再開</p>
   </div>
 </div>
 
 <script>
 /* =========================
-   論理座標（ゲーム計算）と実表示（スマホ画面に固定）を分離
-   - 物理/当たり判定は 360x640 の論理座標で実行
-   - 描画時に「横=画面100%」「縦=画面の2/3」に伸縮して描画
+   固定サイズ（CSSピクセル）
 ========================= */
+const CSS_W = 320;
+const CSS_H = 568;
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
 
 const mainText = document.getElementById("mainText");
 const subText  = document.getElementById("subText");
 
-const LOGICAL_W = 360;
-const LOGICAL_H = 640;
-const GROUND_Y = 560;
+/* DPR対応：見た目は320×568固定、内部解像度だけ高精細に */
+function setupCanvas(){
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
 
-// 画面固定サイズに合わせた描画スケール
-let scaleX = 1, scaleY = 1, dpr = 1;
+  canvas.style.width  = CSS_W + "px";
+  canvas.style.height = CSS_H + "px";
 
-function resizeCanvasToFixedArea(){
-  // CSS上の表示サイズ（px）
-  const rect = canvas.getBoundingClientRect();
-  dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  canvas.width  = Math.round(CSS_W * dpr);
+  canvas.height = Math.round(CSS_H * dpr);
 
-  // 実ピクセルに合わせてキャンバスの解像度を更新
-  const pxW = Math.max(1, Math.round(rect.width  * dpr));
-  const pxH = Math.max(1, Math.round(rect.height * dpr));
-  if (canvas.width !== pxW || canvas.height !== pxH){
-    canvas.width = pxW;
-    canvas.height = pxH;
-  }
-
-  // 論理座標 -> 実ピクセルのスケール（横幅100%/縦2/3固定を厳守）
-  scaleX = canvas.width  / LOGICAL_W;
-  scaleY = canvas.height / LOGICAL_H;
-
-  // 変換をリセット
-  ctx.setTransform(1,0,0,1,0,0);
+  // 以後、座標系はCSSサイズ(320×568)で描く
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-window.addEventListener("resize", resizeCanvasToFixedArea);
-window.addEventListener("orientationchange", resizeCanvasToFixedArea);
+setupCanvas();
 
 /* =========================
-   ゲーム状態
+   ゲーム（ロジックも 320×568 基準）
 ========================= */
+const W = CSS_W;
+const H = CSS_H;
+
+// 地面
+const GROUND_H = 68;
+const GROUND_Y = H - GROUND_H;
+
+// プレイヤー
+const player = {
+  x: 56,
+  y: GROUND_Y - 44,
+  w: 36,
+  h: 44,
+  vy: 0,
+  gravity: 0.95,
+  jump: -14.5,
+  jumpCount: 0
+};
+
+let obstacles = [];
 let running = false;
 let gameOver = false;
 let score = 0;
 let frame = 0;
 
-const player = {
-  x: 60,
-  y: GROUND_Y - 48,
-  w: 40,
-  h: 48,
-  vy: 0,
-  gravity: 1,
-  jump: -16,
-  jumpCount: 0
-};
-
-let obstacles = [];
+// 難易度（固定）
+const OBSTACLE_INTERVAL = 80; // 小さいほど多い
+const OBSTACLE_SPEED = 4.6;
 
 function reset(){
+  obstacles = [];
   running = false;
   gameOver = false;
   score = 0;
   frame = 0;
-  obstacles = [];
+
   player.y = GROUND_Y - player.h;
   player.vy = 0;
   player.jumpCount = 0;
 
-  mainText.textContent = "画面をタップしてスタート";
-  subText.textContent  = "タップでジャンプ（2段ジャンプ）";
+  mainText.textContent = "画面タップでスタート";
+  subText.textContent  = "どこをタップしてもジャンプ（2段ジャンプ）／GAME OVER後もタップで再開";
 }
 
 function jump(){
@@ -164,33 +163,34 @@ function jump(){
   }
 }
 
+/* ★どこタップでも同じ処理：開始→ジャンプ→リスタート */
 function handleTap(){
   if (!running && !gameOver){
     running = true;
     mainText.textContent = "プレイ中";
-    subText.textContent  = "タップでジャンプ";
+    subText.textContent  = "どこタップでもジャンプ（2段ジャンプ）";
     return;
   }
   if (gameOver){
     reset();
     running = true;
     mainText.textContent = "プレイ中";
-    subText.textContent  = "タップでジャンプ";
+    subText.textContent  = "どこタップでもジャンプ（2段ジャンプ）";
     return;
   }
+  // プレイ中
   jump();
 }
 
-/* タップ：開始/ジャンプ/リスタート */
-canvas.addEventListener("pointerdown", (e)=>{
+/* =========================
+   入力：どこをタップしてもジャンプ
+   - イベントは1箇所に統一（重複発火を防止）
+========================= */
+document.addEventListener("pointerdown", (e)=>{
+  // スクロールやズームの誤動作を止める
   e.preventDefault();
   handleTap();
-},{passive:false});
-
-/* 余白タップでも「開始・リスタート」は反応（プレイ中ジャンプはcanvas内のみ） */
-document.body.addEventListener("pointerdown", ()=>{
-  if (!running || gameOver) handleTap();
-},{passive:true});
+}, { passive:false });
 
 /* PC用 */
 document.addEventListener("keydown", (e)=>{
@@ -201,21 +201,34 @@ document.addEventListener("keydown", (e)=>{
   }
 });
 
+/* iOS：ダブルタップズーム抑制 */
+let lastTouchEnd = 0;
+document.addEventListener('touchend', function (event) {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) event.preventDefault();
+  lastTouchEnd = now;
+}, { passive:false });
+
 function spawn(){
+  const minH = 44;
+  const maxH = 170;
+  const h = Math.random() * (maxH - minH) + minH;
   obstacles.push({
-    x: LOGICAL_W + 20,
-    w: 28,
-    h: Math.random() * 120 + 40,
-    speed: 5
+    x: W + 18,
+    w: 24,
+    h,
+    speed: OBSTACLE_SPEED
   });
 }
 
-function hit(a,b){
+function hit(a, o){
+  const ox = o.x;
+  const oy = GROUND_Y - o.h;
   return (
-    a.x < b.x + b.w &&
-    a.x + a.w > b.x &&
-    a.y < GROUND_Y &&
-    a.y + a.h > GROUND_Y - b.h
+    a.x < ox + o.w &&
+    a.x + a.w > ox &&
+    a.y < oy + o.h &&
+    a.y + a.h > oy
   );
 }
 
@@ -236,55 +249,54 @@ function update(){
   }
 
   // 障害物
-  if (frame % 90 === 0) spawn();
+  if (frame % OBSTACLE_INTERVAL === 0) spawn();
   obstacles.forEach(o => o.x -= o.speed);
-  obstacles = obstacles.filter(o => o.x + o.w > 0);
+  obstacles = obstacles.filter(o => o.x + o.w > -30);
 
   for (const o of obstacles){
     if (hit(player, o)){
       gameOver = true;
       running = false;
       mainText.textContent = "GAME OVER";
-      subText.textContent  = "画面をタップでリスタート";
+      subText.textContent  = "画面タップでリスタート（どこでもOK）";
       break;
     }
   }
 }
 
 function draw(){
-  // 描画変換：論理座標→実画面（横=100% / 縦=2/3固定）
-  ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-
   // 背景
-  ctx.fillStyle="#87ceeb";
-  ctx.fillRect(0,0,LOGICAL_W,LOGICAL_H);
+  ctx.fillStyle = "#87ceeb";
+  ctx.fillRect(0,0,W,H);
 
   // 地面
-  ctx.fillStyle="#4caf50";
-  ctx.fillRect(0,GROUND_Y,LOGICAL_W,LOGICAL_H-GROUND_Y);
+  ctx.fillStyle = "#4caf50";
+  ctx.fillRect(0,GROUND_Y,W,GROUND_H);
 
   // プレイヤー
-  ctx.fillStyle="#ff5722";
+  ctx.fillStyle = "#ff5722";
   ctx.fillRect(player.x, player.y, player.w, player.h);
 
   // 障害物
-  ctx.fillStyle="#000";
-  obstacles.forEach(o=>{
+  ctx.fillStyle = "#000";
+  for (const o of obstacles){
     ctx.fillRect(o.x, GROUND_Y - o.h, o.w, o.h);
-  });
+  }
 
   // スコア
-  ctx.fillStyle="#fff";
-  ctx.font="18px Arial";
-  ctx.fillText("SCORE: " + score, 16, 28);
+  ctx.fillStyle = "#fff";
+  ctx.font = "16px Arial";
+  ctx.fillText("SCORE: " + score, 10, 22);
 
-  // 開始案内（ゲーム画面内）
+  // スタート案内（ゲーム内）
   if (!running && !gameOver){
-    ctx.fillStyle="rgba(0,0,0,0.35)";
-    ctx.fillRect(20, 240, LOGICAL_W-40, 140);
-    ctx.fillStyle="#fff";
-    ctx.font="22px Arial";
-    ctx.fillText("TAP TO START", 98, 305);
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(18, 210, W-36, 120);
+    ctx.fillStyle = "#fff";
+    ctx.font = "20px Arial";
+    ctx.fillText("TAP TO START", 78, 275);
+    ctx.font = "14px Arial";
+    ctx.fillText("Tap anywhere to jump", 88, 302);
   }
 }
 
@@ -294,16 +306,7 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
-/* iOS対策：ダブルタップズーム抑制 */
-let lastTouchEnd = 0;
-document.addEventListener('touchend', function (event) {
-  const now = Date.now();
-  if (now - lastTouchEnd <= 300) event.preventDefault();
-  lastTouchEnd = now;
-}, { passive:false });
-
 reset();
-resizeCanvasToFixedArea();
 loop();
 </script>
 </body>
