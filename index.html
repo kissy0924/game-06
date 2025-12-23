@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>ランダム棒 避けゲー（スマホ縦対応）</title>
+<style>
+  :root{ --maxW: 420px; }
+
+  body{
+    margin:0;
+    background:#000;
+    color:#fff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+    touch-action:none;
+    -webkit-user-select:none;
+    user-select:none;
+    overscroll-behavior:none;
+  }
+
+  /* 画面内に全部収める（縦） */
+  #wrap{
+    height: 100dvh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    gap:8px;
+    padding: 10px 10px calc(12px + env(safe-area-inset-bottom));
+    box-sizing:border-box;
+  }
+
+  h3{
+    margin:0;
+    font-size:18px;
+    font-weight:700;
+    letter-spacing: .02em;
+  }
+
+  #hint{
+    margin:0;
+    font-size:13px;
+    opacity:.9;
+  }
+
+  canvas{
+    display:block;
+    background:#111;
+    border: 2px solid rgba(255,255,255,0.7);
+    border-radius: 10px;
+    width: min(var(--maxW), 100%);
+    height: auto;
+    touch-action:none;
+  }
+
+  #subhint{
+    margin:0;
+    font-size:12px;
+    opacity:.8;
+  }
+</style>
+</head>
+<body>
+
+<div id="wrap">
+  <h3>ランダム棒 避けゲー</h3>
+  <p id="hint">画面タップでスタート / タップでジャンプ（2段ジャンプ）</p>
+
+  <!-- 内部解像度は縦向けに変更（ゲームはこの座標系で動く） -->
+  <canvas id="game" width="360" height="640"></canvas>
+
+  <p id="subhint">GAME OVER後は画面タップでリスタート</p>
+</div>
+
+<script>
+/* =========================
+   Canvas / サイズフィット
+========================= */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const BASE_W = 360;
+const BASE_H = 640;
+
+/* wrap内で「キャンバスが下に隠れない」よう自動で高さを調整 */
+function fitCanvas(){
+  const wrap = document.getElementById("wrap");
+  const hint = document.getElementById("hint");
+  const subhint = document.getElementById("subhint");
+
+  const wrapH = wrap.getBoundingClientRect().height;
+  const usedH = hint.getBoundingClientRect().height + subhint.getBoundingClientRect().height + 60; // タイトル+余白分
+  const availableH = Math.max(240, wrapH - usedH);
+
+  // 表示幅（CSSのmaxWに合わせる）
+  const displayW = Math.min(420, window.innerWidth - 20);
+  let scale = displayW / BASE_W;
+
+  // 高さが足りない場合は高さ基準で縮小
+  let displayH = BASE_H * scale;
+  if (displayH > availableH){
+    scale = availableH / BASE_H;
+    canvas.style.width = (BASE_W * scale) + "px";
+    canvas.style.height = (BASE_H * scale) + "px";
+  } else {
+    canvas.style.width = displayW + "px";
+    canvas.style.height = displayH + "px";
+  }
+}
+window.addEventListener("resize", fitCanvas);
+window.addEventListener("orientationchange", fitCanvas);
+
+/* =========================
+   ゲーム状態
+========================= */
+let score, stage, frame;
+let gameOver, gameClear;
+let isRunning; // ★スタート待ちを作る
+
+const stages = [
+  { bg: "#87ceeb", speed: 4, interval: 120 },
+  { bg: "#90caf9", speed: 5, interval: 100 },
+  { bg: "#b39ddb", speed: 6, interval: 90  },
+  { bg: "#ffcc80", speed: 7, interval: 80  },
+  { bg: "#ff8a65", speed: 8, interval: 70  }
+];
+
+// 地面
+const GROUND_Y = 560;  // 地面の上端
+const GROUND_H = 80;   // 地面の厚み
+
+// プレイヤー
+const player = {
+  x: 70,
+  y: GROUND_Y - 48,
+  w: 42,
+  h: 48,
+  vy: 0,
+  gravity: 1.0,
+  jump: -16,
+  jumpCount: 0
+};
+
+let obstacles = [];
+
+/* =========================
+   初期化
+========================= */
+function reset(){
+  score = 0;
+  stage = 1;
+  frame = 0;
+  gameOver = false;
+  gameClear = false;
+
+  obstacles = [];
+
+  player.y = GROUND_Y - player.h;
+  player.vy = 0;
+  player.jumpCount = 0;
+
+  isRunning = false; // ★タップで開始
+}
+
+/* =========================
+   入力：タップで開始/ジャンプ/リスタート
+   - スタート前：タップで開始
+   - 実行中：タップでジャンプ
+   - GAME OVER：タップでリスタート
+========================= */
+function doJump(){
+  if (player.jumpCount < 2){
+    player.vy = player.jump;
+    player.jumpCount++;
+  }
+}
+
+// PC用（Space/↑でジャンプ）
+document.addEventListener("keydown", e => {
+  if (e.code === "ArrowUp" || e.code === "Space"){
+    if (!isRunning && !gameOver && !gameClear){
+      isRunning = true;
+      return;
+    }
+    if (gameOver){
+      reset();
+      isRunning = true;
+      return;
+    }
+    if (isRunning && !gameOver && !gameClear){
+      doJump();
+    }
+  }
+});
+
+function handleTap(){
+  if (!isRunning && !gameOver && !gameClear){
+    isRunning = true;
+    return;
+  }
+  if (gameOver){
+    reset();
+    isRunning = true;
+    return;
+  }
+  if (gameClear){
+    reset();
+    isRunning = true;
+    return;
+  }
+  // 実行中
+  doJump();
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  handleTap();
+}, { passive:false });
+
+// 余白タップでも反応させる（押しやすさUP）
+document.body.addEventListener("pointerdown", (e) => {
+  // canvas以外をタップしても開始/再開はOK、ただし実行中ジャンプはcanvas内だけにしたいならここを外してOK
+  if (!isRunning || gameOver || gameClear){
+    handleTap();
+  }
+}, { passive:true });
+
+// iOS対策：ダブルタップズーム抑制
+let lastTouchEnd = 0;
+document.addEventListener("touchend", function (event) {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) event.preventDefault();
+  lastTouchEnd = now;
+}, { passive:false });
+
+/* =========================
+   障害物
+========================= */
+function createObstacle(){
+  const minH = 40;
+  const maxH = 160;
+  const height = Math.random() * (maxH - minH) + minH;
+
+  obstacles.push({
+    x: BASE_W + 10,
+    w: 28,
+    h: height,
+    y: GROUND_Y - height,
+    speed: stages[stage - 1].speed
+  });
+}
+
+function hit(a, b){
+  return (
+    a.x < b.x + b.w &&
+    a.x + a.w > b.x &&
+    a.y < b.y + b.h &&
+    a.y + a.h > b.y
+  );
+}
+
+/* =========================
+   更新
+========================= */
+function update(){
+  if (!isRunning || gameOver || gameClear) return;
+
+  frame++;
+  score++;
+
+  // ステージアップ
+  if (stage < 5 && score > stage * 1000) stage++;
+  if (stage === 5 && score > 6000) gameClear = true;
+
+  // プレイヤー
+  player.vy += player.gravity;
+  player.y += player.vy;
+
+  if (player.y >= GROUND_Y - player.h){
+    player.y = GROUND_Y - player.h;
+    player.vy = 0;
+    player.jumpCount = 0;
+  }
+
+  // 障害物生成
+  if (frame % stages[stage - 1].interval === 0){
+    createObstacle();
+  }
+
+  // 障害物移動
+  obstacles.forEach(o => o.x -= o.speed);
+  obstacles = obstacles.filter(o => o.x + o.w > -20);
+
+  // 衝突
+  for (const o of obstacles){
+    if (hit(player, o)){
+      gameOver = true;
+      isRunning = false;
+      break;
+    }
+  }
+}
+
+/* =========================
+   描画
+========================= */
+function draw(){
+  // 背景
+  ctx.fillStyle = stages[stage - 1].bg;
+  ctx.fillRect(0, 0, BASE_W, BASE_H);
+
+  // 地面
+  ctx.fillStyle = "#4caf50";
+  ctx.fillRect(0, GROUND_Y, BASE_W, GROUND_H);
+
+  // プレイヤー
+  ctx.fillStyle = "#ff5722";
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+
+  // 障害物
+  ctx.fillStyle = "#000";
+  obstacles.forEach(o => ctx.fillRect(o.x, o.y, o.w, o.h));
+
+  // UI
+  ctx.fillStyle = "#fff";
+  ctx.font = "18px Arial";
+  ctx.fillText("SCORE: " + score, 16, 28);
+  ctx.fillText("STAGE: " + stage, 16, 52);
+
+  // 開始案内
+  if (!isRunning && !gameOver && !gameClear){
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(20, 230, BASE_W - 40, 140);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "24px Arial";
+    ctx.fillText("画面をタップしてスタート", 42, 290);
+    ctx.font = "16px Arial";
+    ctx.fillText("タップでジャンプ（2段ジャンプ）", 62, 326);
+  }
+
+  // GAME OVER
+  if (gameOver){
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(40, 240, BASE_W - 80, 140);
+
+    ctx.fillStyle = "red";
+    ctx.font = "34px Arial";
+    ctx.fillText("GAME OVER", 62, 295);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px Arial";
+    ctx.fillText("画面タップでリスタート", 78, 330);
+  }
+
+  // CLEAR
+  if (gameClear){
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(40, 240, BASE_W - 80, 140);
+
+    ctx.fillStyle = "yellow";
+    ctx.font = "34px Arial";
+    ctx.fillText("GAME CLEAR!", 55, 295);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px Arial";
+    ctx.fillText("画面タップで最初から", 92, 330);
+  }
+}
+
+/* =========================
+   ループ
+========================= */
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+/* 起動 */
+reset();
+fitCanvas();
+loop();
+</script>
+</body>
+</html>
