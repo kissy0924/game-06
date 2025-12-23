@@ -3,80 +3,88 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>縦画面 避けゲー（2/3表示）</title>
+<title>縦画面 2/3 ゲーム</title>
+
 <style>
-  body{
-    margin:0;
-    background:#000;
-    color:#fff;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
-    touch-action:none;
-    user-select:none;
-    overscroll-behavior:none;
-  }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #000;
+  color: #fff;
+  touch-action: none;
+  user-select: none;
+  overscroll-behavior: none;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+}
 
-  #wrap{
-    height:100dvh;
-    display:flex;
-    flex-direction:column;
-  }
+/* ===== 画面を 3 分割 ===== */
+#wrap {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
 
-  /* ===== ゲーム表示エリア（2/3） ===== */
-  #gameArea{
-    flex: 2;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    padding-top: env(safe-area-inset-top);
-  }
+/* 上：ゲーム（2/3） */
+#gameArea {
+  flex: 2;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 
-  canvas{
-    background:#111;
-    border:2px solid #fff;
-    border-radius:12px;
-    width:100%;
-    max-width:420px;
-    height:auto;
-  }
+/* 下：UI（1/3） */
+#infoArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: env(safe-area-inset-bottom);
+}
 
-  /* ===== 下余白エリア（1/3） ===== */
-  #infoArea{
-    flex:1;
-    display:flex;
-    flex-direction:column;
-    justify-content:center;
-    align-items:center;
-    text-align:center;
-    gap:12px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom));
-  }
+/* Canvas は「高さを親の100%」に合わせる */
+canvas {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 9 / 16;   /* 縦ゲーム固定 */
+  background: #111;
+  border: 2px solid #fff;
+  border-radius: 12px;
+}
 
-  /* ★ フォント2倍 */
-  #infoArea p{
-    font-size: 2em;
-    margin:0;
-    line-height:1.4;
-  }
+/* ★ 下の文字を 2 倍 */
+#infoArea p {
+  margin: 0;
+  font-size: 2em;
+  text-align: center;
+}
 </style>
 </head>
+
 <body>
 
 <div id="wrap">
-  <!-- ゲーム -->
+
+  <!-- ===== 上 2/3：ゲーム ===== -->
   <div id="gameArea">
     <canvas id="game" width="360" height="640"></canvas>
   </div>
 
-  <!-- 余白UI -->
+  <!-- ===== 下 1/3：余白 UI ===== -->
   <div id="infoArea">
     <p id="mainText">画面をタップしてスタート</p>
     <p id="subText">タップでジャンプ（2段ジャンプ）</p>
   </div>
+
 </div>
 
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+
 const mainText = document.getElementById("mainText");
 const subText  = document.getElementById("subText");
 
@@ -84,14 +92,15 @@ const W = 360;
 const H = 640;
 const GROUND_Y = 560;
 
-let score, frame, stage;
-let isRunning = false;
+let running = false;
 let gameOver = false;
+let score = 0;
+let frame = 0;
 
 const player = {
-  x: 70,
+  x: 60,
   y: GROUND_Y - 48,
-  w: 42,
+  w: 40,
   h: 48,
   vy: 0,
   gravity: 1,
@@ -101,12 +110,11 @@ const player = {
 
 let obstacles = [];
 
-function reset(){
+function reset() {
+  running = false;
+  gameOver = false;
   score = 0;
   frame = 0;
-  stage = 1;
-  isRunning = false;
-  gameOver = false;
   obstacles = [];
   player.y = GROUND_Y - player.h;
   player.vy = 0;
@@ -116,23 +124,23 @@ function reset(){
   subText.textContent  = "タップでジャンプ（2段ジャンプ）";
 }
 
-function jump(){
-  if(player.jumpCount < 2){
+function jump() {
+  if (player.jumpCount < 2) {
     player.vy = player.jump;
     player.jumpCount++;
   }
 }
 
-function tap(){
-  if(!isRunning && !gameOver){
-    isRunning = true;
+function handleTap() {
+  if (!running && !gameOver) {
+    running = true;
     mainText.textContent = "プレイ中";
     subText.textContent  = "タップでジャンプ";
     return;
   }
-  if(gameOver){
+  if (gameOver) {
     reset();
-    isRunning = true;
+    running = true;
     mainText.textContent = "プレイ中";
     subText.textContent  = "タップでジャンプ";
     return;
@@ -140,54 +148,57 @@ function tap(){
   jump();
 }
 
-canvas.addEventListener("pointerdown", e=>{
+canvas.addEventListener("pointerdown", e => {
   e.preventDefault();
-  tap();
-},{passive:false});
+  handleTap();
+}, { passive: false });
 
-document.body.addEventListener("pointerdown", ()=>{
-  if(!isRunning || gameOver) tap();
-},{passive:true});
+document.body.addEventListener("pointerdown", e => {
+  if (!running || gameOver) handleTap();
+}, { passive: true });
 
-function spawn(){
+function spawn() {
   obstacles.push({
     x: W + 20,
     w: 28,
-    h: Math.random()*120 + 40,
+    h: Math.random() * 120 + 40,
     speed: 5
   });
 }
 
-function hit(a,b){
-  return a.x < b.x+b.w &&
-         a.x+a.w > b.x &&
-         a.y < GROUND_Y &&
-         a.y+a.h > GROUND_Y-b.h;
+function hit(a, b) {
+  return (
+    a.x < b.x + b.w &&
+    a.x + a.w > b.x &&
+    a.y < GROUND_Y &&
+    a.y + a.h > GROUND_Y - b.h
+  );
 }
 
-function update(){
-  if(!isRunning || gameOver) return;
+function update() {
+  if (!running || gameOver) return;
 
   frame++;
   score++;
 
   player.vy += player.gravity;
   player.y += player.vy;
-  if(player.y >= GROUND_Y-player.h){
-    player.y = GROUND_Y-player.h;
+
+  if (player.y >= GROUND_Y - player.h) {
+    player.y = GROUND_Y - player.h;
     player.vy = 0;
     player.jumpCount = 0;
   }
 
-  if(frame % 90 === 0) spawn();
+  if (frame % 90 === 0) spawn();
 
   obstacles.forEach(o => o.x -= o.speed);
   obstacles = obstacles.filter(o => o.x + o.w > 0);
 
-  for(const o of obstacles){
-    if(hit(player,o)){
+  for (const o of obstacles) {
+    if (hit(player, o)) {
       gameOver = true;
-      isRunning = false;
+      running = false;
       mainText.textContent = "GAME OVER";
       subText.textContent  = "画面をタップでリスタート";
       break;
@@ -195,29 +206,29 @@ function update(){
   }
 }
 
-function draw(){
-  ctx.clearRect(0,0,W,H);
+function draw() {
+  ctx.clearRect(0, 0, W, H);
 
-  ctx.fillStyle="#87ceeb";
-  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = "#87ceeb";
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle="#4caf50";
-  ctx.fillRect(0,GROUND_Y,W,H-GROUND_Y);
+  ctx.fillStyle = "#4caf50";
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
 
-  ctx.fillStyle="#ff5722";
-  ctx.fillRect(player.x,player.y,player.w,player.h);
+  ctx.fillStyle = "#ff5722";
+  ctx.fillRect(player.x, player.y, player.w, player.h);
 
-  ctx.fillStyle="#000";
-  obstacles.forEach(o=>{
-    ctx.fillRect(o.x, GROUND_Y-o.h, o.w, o.h);
+  ctx.fillStyle = "#000";
+  obstacles.forEach(o => {
+    ctx.fillRect(o.x, GROUND_Y - o.h, o.w, o.h);
   });
 
-  ctx.fillStyle="#fff";
-  ctx.font="18px Arial";
-  ctx.fillText("SCORE: "+score, 16, 28);
+  ctx.fillStyle = "#fff";
+  ctx.font = "18px Arial";
+  ctx.fillText("SCORE: " + score, 16, 28);
 }
 
-function loop(){
+function loop() {
   update();
   draw();
   requestAnimationFrame(loop);
@@ -226,5 +237,6 @@ function loop(){
 reset();
 loop();
 </script>
+
 </body>
 </html>
